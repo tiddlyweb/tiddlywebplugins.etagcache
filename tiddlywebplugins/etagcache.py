@@ -75,7 +75,10 @@ class EtagCache(object):
             if match:
                 cached_etag = self._mc.get(self._make_key(environ, uri))
                 if cached_etag and cached_etag == match:
+                    logging.debug('%s cache hit for %s', __name__, uri)
                     raise HTTP304(match)
+                else:
+                    logging.debug('%s cache miss for %s', __name__, uri)
 
     def _check_response(self, environ):
         if environ['REQUEST_METHOD'] == 'GET':
@@ -90,7 +93,7 @@ class EtagCache(object):
     def _cache(self, environ, value):
         uri = urllib.quote(environ.get('SCRIPT_NAME', '')
                 + environ.get('PATH_INFO', ''))
-        logging.debug('adding to cache %s:%s' % (uri, value))
+        logging.debug('%s adding to cache %s:%s', __name__, uri, value)
         self._mc.set(self._make_key(environ, uri), value)
 
     def _make_key(self, environ, uri):
@@ -130,6 +133,7 @@ def _namespace_key(bag_name, tiddler_name):
 def tiddler_put_hook(store, tiddler):
     bag = tiddler.bag
     title = tiddler.title
+    logging.debug('%s resetting namespace keys', __name__)
     bag_key = _namespace_key(bag, '')
     tiddler_key = _namespace_key(bag, title)
     # This get_store is required to work around confusion with what

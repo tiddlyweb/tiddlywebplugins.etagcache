@@ -19,14 +19,6 @@ def setup_module(module):
         shutil.rmtree('store')
     except OSError:
         pass
-    try:
-        shutil.rmtree('.test_cache')
-    except OSError:
-        pass
-    try:
-        os.mkdir('.test_cache')
-    except OSError:
-        pass
 
     # establish web server
     app = load_app()
