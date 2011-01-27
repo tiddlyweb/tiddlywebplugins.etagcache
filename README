@@ -6,5 +6,8 @@ tiddlywebplugins.caching.
 Cache invalidation is handled via store hooks and this trick:
 http://code.google.com/p/memcached/wiki/FAQ#Deleting_by_Namespace
 
+Note the test files are not good tests, there were used to structure
+development but do not adequately assert anything.
+
 Licensed as TiddlyWeb itself.
 Copyright 2011, Chris Dent <cdent@peermore.com>

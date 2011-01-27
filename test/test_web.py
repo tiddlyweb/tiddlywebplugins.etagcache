@@ -71,7 +71,6 @@ def test_simple_get():
             headers={'If-None-Match': etag})
 
     assert response['status'] == '304'
-    assert 'fromcache' in response['etag']
 
     tiddler = Tiddler('one', 'place')
     tiddler.text = 'bye'
@@ -85,7 +84,6 @@ def test_simple_get():
 
     assert response['status'] == '200'
     assert 'etag' in response
-    assert 'fromcache' not in response['etag']
 
     etag = response['etag']
 
@@ -94,7 +92,13 @@ def test_simple_get():
             headers={'If-None-Match': etag})
 
     assert response['status'] == '304'
-    assert 'fromcache' in response['etag']
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers/one',
+            headers={'If-None-Match': etag,
+                'Accept': 'application/json'})
+
+    assert response['status'] == '200'
 
     tiddler = Tiddler('one', 'place')
     tiddler.text = 'cow'
@@ -108,4 +112,3 @@ def test_simple_get():
 
     assert response['status'] == '200'
     assert 'etag' in response
-    assert 'fromcache' not in response['etag']

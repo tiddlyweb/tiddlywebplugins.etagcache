@@ -26,6 +26,7 @@ Installation is simply adding the plugin name to system_plugins
 in tiddlywebconfig.py
 """
 
+import logging
 import uuid # for namespacing
 import urllib
 
@@ -65,7 +66,7 @@ class EtagCache(object):
             if match:
                 cached_etag = CACHE.get(_make_key(environ, uri), None)
                 if cached_etag and cached_etag == match:
-                    raise HTTP304(match + 'fromcache')
+                    raise HTTP304(match)
 
     def _check_response(self, environ):
         if environ['REQUEST_METHOD'] == 'GET':
@@ -80,6 +81,7 @@ class EtagCache(object):
     def _cache(self, environ, value):
         uri = urllib.quote(environ.get('SCRIPT_NAME', '')
                 + environ.get('PATH_INFO', ''))
+        logging.debug('adding to cache %s:%s' % (uri, value))
         CACHE[_make_key(environ, uri)] = value
 
 
