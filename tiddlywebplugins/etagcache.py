@@ -36,7 +36,8 @@ from tiddlyweb.web.util import get_serialize_type
 from tiddlyweb.web.negotiate import Negotiate
 from tiddlyweb.web.http import HTTP304
 
-CACHE = {}
+from tiddlywebplugins.utils import get_store
+
 
 class EtagCache(object):
 
@@ -44,18 +45,26 @@ class EtagCache(object):
         self.application = application
 
     def __call__(self, environ, start_response):
-        self._check_cache(environ, start_response)
+        try:
+            _mc = environ['tiddlyweb.store'].storage._mc
+        except AttributeError:
+            _mc = None
+        if _mc:
+            self._mc = _mc
+            self._check_cache(environ, start_response)
 
-        def replacement_start_response(status, headers, exc_info=None):
-            self.status = status
-            self.headers = headers
-            return start_response(status, headers, exc_info)
+            def replacement_start_response(status, headers, exc_info=None):
+                self.status = status
+                self.headers = headers
+                return start_response(status, headers, exc_info)
 
-        output = self.application(environ, replacement_start_response)
+            output = self.application(environ, replacement_start_response)
 
-        self._check_response(environ)
+            self._check_response(environ)
 
-        return output
+            return output
+        else:
+            return self.application(environ, start_response)
 
     def _check_cache(self, environ, start_response):
         uri = urllib.quote(environ.get('SCRIPT_NAME', '')
@@ -64,7 +73,7 @@ class EtagCache(object):
         if uri.startswith('%s/bags' % prefix) and 'tiddlers' in uri:
             match = environ.get('HTTP_IF_NONE_MATCH', None)
             if match:
-                cached_etag = CACHE.get(_make_key(environ, uri), None)
+                cached_etag = self._mc.get(self._make_key(environ, uri))
                 if cached_etag and cached_etag == match:
                     raise HTTP304(match)
 
@@ -82,41 +91,40 @@ class EtagCache(object):
         uri = urllib.quote(environ.get('SCRIPT_NAME', '')
                 + environ.get('PATH_INFO', ''))
         logging.debug('adding to cache %s:%s' % (uri, value))
-        CACHE[_make_key(environ, uri)] = value
+        self._mc.set(self._make_key(environ, uri), value)
+
+    def _make_key(self, environ, uri):
+        try:
+            mime_type = get_serialize_type(environ)[1]
+            mime_type = mime_type.split(';', 1)[0].strip()
+        except (TypeError, AttributeError):
+            mime_type = ''
+        username = environ['tiddlyweb.usersign']['name']
+        namespace = self._get_namespace(environ, uri)
+        key = '%s:%s:%s:%s' % (namespace, mime_type, username, uri)
+        return sha(key.encode('UTF-8')).hexdigest()
 
 
-def _make_key(environ, uri):
-    try:
-        mime_type = get_serialize_type(environ)[1]
-        mime_type = mime_type.split(';', 1)[0].strip()
-    except (TypeError, AttributeError):
-        mime_type = ''
-    username = environ['tiddlyweb.usersign']['name']
-    namespace = _get_namespace(environ, uri)
-    key = '%s:%s:%s:%s' % (namespace, mime_type, username, uri)
-    return sha(key.encode('UTF-8')).hexdigest()
-
-
-def _get_namespace(environ, uri):
-    prefix = environ.get('tiddlyweb.config', {}).get('server_prefix', '')
-    index = 0
-    if prefix:
-        index = 1
-    uri_parts = uri.split('/')[index:]
-    bag_name = uri_parts[1]
-    tiddler_name = ''
-    if len(uri_parts) >= 4:
-        tiddler_name = uri_parts[3]
-    key = _namespace_key(bag_name, tiddler_name)
-    namespace = CACHE.get(key, '')
-    if not namespace:
-        namespace = '%s' % uuid.uuid4()
-        CACHE[key] = namespace
-    return namespace
+    def _get_namespace(self, environ, uri):
+        prefix = environ.get('tiddlyweb.config', {}).get('server_prefix', '')
+        index = 0
+        if prefix:
+            index = 1
+        uri_parts = uri.split('/')[index:]
+        bag_name = uri_parts[1]
+        tiddler_name = ''
+        if len(uri_parts) >= 4:
+            tiddler_name = uri_parts[3]
+        key = _namespace_key(bag_name, tiddler_name)
+        namespace = self._mc.get(key)
+        if not namespace:
+            namespace = '%s' % uuid.uuid4()
+            self._mc.set(key.encode('utf8'), namespace)
+        return namespace
 
 
 def _namespace_key(bag_name, tiddler_name):
-    namespace_key = '%s:%s_namespace' % (bag_name, tiddler_name)
+    return '%s:%s_namespace' % (bag_name, tiddler_name)
 
 
 def tiddler_put_hook(store, tiddler):
@@ -124,8 +132,11 @@ def tiddler_put_hook(store, tiddler):
     title = tiddler.title
     bag_key = _namespace_key(bag, '')
     tiddler_key = _namespace_key(bag, title)
-    CACHE[bag_key] = '%s' % uuid.uuid4()
-    CACHE[tiddler_key] = '%s' % uuid.uuid4()
+    # This get_store is required to work around confusion with what
+    # store is current.
+    top_store = get_store(store.environ['tiddlyweb.config'])
+    top_store.storage._mc.set(bag_key.encode('utf8'), '%s' % uuid.uuid4())
+    top_store.storage._mc.set(tiddler_key.encode('utf8'), '%s' % uuid.uuid4())
 
 
 def init(config):
@@ -134,4 +145,5 @@ def init(config):
             config['server_request_filters'].insert(
                     config['server_request_filters'].index(Negotiate) + 1,
                     EtagCache)
-    HOOKS['tiddler']['put'].append(tiddler_put_hook)
+    if 'cached_store' in config:
+        HOOKS['tiddler']['put'].append(tiddler_put_hook)
