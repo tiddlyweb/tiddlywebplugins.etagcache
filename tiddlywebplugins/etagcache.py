@@ -114,15 +114,16 @@ class EtagCache(object):
         if prefix:
             index = 1
         uri_parts = uri.split('/')[index:]
-        bag_name = uri_parts[1]
+        bag_name = uri_parts[2]
         tiddler_name = ''
-        if len(uri_parts) >= 4:
-            tiddler_name = uri_parts[3]
+        if len(uri_parts) > 4:
+            tiddler_name = uri_parts[4]
         key = _namespace_key(bag_name, tiddler_name)
         namespace = self._mc.get(key)
         if not namespace:
             namespace = '%s' % uuid.uuid4()
             self._mc.set(key.encode('utf8'), namespace)
+        logging.debug('current namespace %s:%s', key, namespace)
         return namespace
 
 
@@ -130,12 +131,12 @@ def _namespace_key(bag_name, tiddler_name):
     return '%s:%s_namespace' % (bag_name, tiddler_name)
 
 
-def tiddler_put_hook(store, tiddler):
+def tiddler_change_hook(store, tiddler):
     bag = tiddler.bag
     title = tiddler.title
-    logging.debug('%s resetting namespace keys', __name__)
     bag_key = _namespace_key(bag, '')
     tiddler_key = _namespace_key(bag, title)
+    logging.debug('%s resetting namespace keys, %s, %s', __name__, bag_key, tiddler_key)
     # This get_store is required to work around confusion with what
     # store is current.
     top_store = get_store(store.environ['tiddlyweb.config'])
@@ -150,4 +151,5 @@ def init(config):
                     config['server_request_filters'].index(Negotiate) + 1,
                     EtagCache)
     if 'cached_store' in config:
-        HOOKS['tiddler']['put'].append(tiddler_put_hook)
+        HOOKS['tiddler']['put'].append(tiddler_change_hook)
+        HOOKS['tiddler']['delete'].append(tiddler_change_hook)

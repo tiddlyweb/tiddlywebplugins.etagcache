@@ -92,15 +92,66 @@ def test_simple_get():
 
     assert response['status'] == '200'
 
-    tiddler = Tiddler('one', 'place')
-    tiddler.text = 'cow'
-    store.put(tiddler)
-    response, content = http.request(
-            'http://our_test_domain:8001/bags/place/tiddlers',
-            headers={'If-None-Match': etag})
-
     response, content = http.request(
             'http://our_test_domain:8001/bags/place/tiddlers')
 
     assert response['status'] == '200'
-    assert 'etag' in response
+    etag = response['etag']
+
+    tiddler = Tiddler('one', 'place')
+    tiddler.text = 'cow'
+    store.put(tiddler)
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers',
+            headers={'If-None-Match': etag})
+
+    assert response['status'] == '200'
+    assert response['etag'] != etag
+    etag = response['etag']
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers',
+            headers={'If-None-Match': etag})
+
+    assert response['status'] == '304'
+    assert response['etag'] == etag
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers?select=title:two')
+
+    assert response['status'] == '200'
+    etag = response['etag']
+
+    tiddler = Tiddler('one', 'place')
+    tiddler.text = 'cow'
+    store.put(tiddler)
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers?select=title:two',
+            headers={'If-None-Match': etag})
+
+    assert response['status'] == '304' # this is a deep etag hit
+    assert response['etag'] == etag
+
+    tiddler = Tiddler('two', 'place')
+    tiddler.text = 'thief'
+    store.put(tiddler)
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers?select=title:two',
+            headers={'If-None-Match': etag})
+
+    assert response['status'] == '200' # total etag miss
+    assert response['etag'] != etag
+
+    etag = response['etag']
+
+    response, content = http.request(
+            'http://our_test_domain:8001/bags/place/tiddlers?select=title:two',
+            headers={'If-None-Match': etag})
+
+    assert response['status'] == '304'
+    assert response['etag'] == etag
+
+
