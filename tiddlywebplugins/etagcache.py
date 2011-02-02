@@ -72,8 +72,7 @@ class EtagCache(object):
             return self.application(environ, start_response)
 
     def _check_cache(self, environ, start_response):
-        uri = urllib.quote(environ.get('SCRIPT_NAME', '')
-                + environ.get('PATH_INFO', ''))
+        uri = _get_uri(environ)
         if _cacheable(environ, uri):
             match = environ.get('HTTP_IF_NONE_MATCH', None)
             if match:
@@ -86,16 +85,14 @@ class EtagCache(object):
 
     def _check_response(self, environ):
         if environ['REQUEST_METHOD'] == 'GET':
-            uri = urllib.quote(environ.get('SCRIPT_NAME', '')
-                    + environ.get('PATH_INFO', ''))
+            uri = _get_uri(environ)
             if _cacheable(environ, uri):
                 for name, value in self.headers:
                     if name.lower() == 'etag':
                         self._cache(environ, value)
 
     def _cache(self, environ, value):
-        uri = urllib.quote(environ.get('SCRIPT_NAME', '')
-                + environ.get('PATH_INFO', ''))
+        uri = _get_uri(environ)
         logging.debug('%s adding to cache %s:%s', __name__, uri, value)
         self._mc.set(self._make_key(environ, uri), value)
 
@@ -151,6 +148,14 @@ def _cacheable(environ, uri):
     return True
     #prefix = environ.get('tiddlyweb.config', {}).get('server_prefix', '')
     #return uri.startswith('%s/search' % prefix) or '/tiddlers/' in uri
+
+
+def _get_uri(environ):
+    uri = urllib.quote(environ.get('SCRIPT_NAME', '')
+            + environ.get('PATH_INFO', ''))
+    if environ.get('QUERY_STRING'):
+        uri += '?' + environ['QUERY_STRING']
+    return uri
 
 
 def _container_namespace_key(container, bag_name, tiddler_name):
