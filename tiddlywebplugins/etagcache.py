@@ -34,7 +34,7 @@ from tiddlyweb.store import HOOKS
 from tiddlyweb.util import sha
 from tiddlyweb.web.util import get_serialize_type
 from tiddlyweb.web.negotiate import Negotiate
-from tiddlyweb.web.http import HTTP304
+from tiddlyweb.web.http import HTTP304, HTTP415
 
 from tiddlywebplugins.utils import get_store
 
@@ -50,12 +50,14 @@ class EtagCache(object):
         self.application = application
 
     def __call__(self, environ, start_response):
+        logging.debug('%s entering', __name__)
         try:
             _mc = environ['tiddlyweb.store'].storage._mc
         except AttributeError:
             _mc = None
         if _mc:
             self._mc = _mc
+            logging.debug('%s checking cache', __name__)
             self._check_cache(environ, start_response)
 
             def replacement_start_response(status, headers, exc_info=None):
@@ -65,6 +67,7 @@ class EtagCache(object):
 
             output = self.application(environ, replacement_start_response)
 
+            logging.debug('%s checking response', __name__)
             self._check_response(environ)
 
             return output
@@ -72,16 +75,23 @@ class EtagCache(object):
             return self.application(environ, start_response)
 
     def _check_cache(self, environ, start_response):
-        uri = _get_uri(environ)
-        if _cacheable(environ, uri):
-            match = environ.get('HTTP_IF_NONE_MATCH', None)
-            if match:
-                cached_etag = self._mc.get(self._make_key(environ, uri))
-                if cached_etag and cached_etag == match:
-                    logging.debug('%s cache hit for %s', __name__, uri)
-                    raise HTTP304(match)
+        if environ['REQUEST_METHOD'] == 'GET':
+            uri = _get_uri(environ)
+            logging.debug('%s with %s %s', __name__, uri, environ['REQUEST_METHOD'])
+            if _cacheable(environ, uri):
+                match = environ.get('HTTP_IF_NONE_MATCH', None)
+                if match:
+                    logging.debug('%s has match %s', __name__, match)
+                    cached_etag = self._mc.get(self._make_key(environ, uri))
+                    logging.debug('%s comparing cached %s to %s', __name__,
+                            cached_etag, match)
+                    if cached_etag and cached_etag == match:
+                        logging.debug('%s cache hit for %s', __name__, uri)
+                        raise HTTP304(match)
+                    else:
+                        logging.debug('%s cache miss for %s', __name__, uri)
                 else:
-                    logging.debug('%s cache miss for %s', __name__, uri)
+                    logging.debug('%s no if none match for %s', __name__, uri)
 
     def _check_response(self, environ):
         if environ['REQUEST_METHOD'] == 'GET':
@@ -100,8 +110,12 @@ class EtagCache(object):
         try:
             mime_type = get_serialize_type(environ)[1]
             mime_type = mime_type.split(';', 1)[0].strip()
-        except (TypeError, AttributeError):
-            mime_type = ''
+        except (TypeError, AttributeError, HTTP415):
+            config = environ['tiddlyweb.config']
+            default_serializer = config['default_serializer']
+            serializers = config['serializers']
+            mime_type = serializers[default_serializer][1]
+        logging.debug('%s mime_type %s for %s', __name__, mime_type, uri)
         username = environ['tiddlyweb.usersign']['name']
         namespace = self._get_namespace(environ, uri)
         key = '%s:%s:%s:%s' % (namespace, mime_type, username, uri)
@@ -139,8 +153,11 @@ class EtagCache(object):
         namespace = self._mc.get(key)
         if not namespace:
             namespace = '%s' % uuid.uuid4()
+            logging.debug('%s no namespace for %s, setting to %s', __name__,
+                    key, namespace)
             self._mc.set(key.encode('utf8'), namespace)
-        logging.debug('current namespace %s:%s', key, namespace)
+        logging.debug('%s current namespace %s:%s', __name__,
+                key, namespace)
         return namespace
 
 
