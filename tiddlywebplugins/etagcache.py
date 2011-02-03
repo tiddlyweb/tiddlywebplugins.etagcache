@@ -119,8 +119,8 @@ class EtagCache(object):
             container = uri_parts[1]
             bag_name = uri_parts[2]
             tiddler_name = ''
-            if len(uri_parts) > 4:
-                tiddler_name = uri_parts[4]
+            #if len(uri_parts) > 4:
+            #    tiddler_name = uri_parts[4]
             key = _container_namespace_key(container, bag_name, tiddler_name)
         elif '/recipes/' in uri:
             if '/tiddlers' in uri:
@@ -167,14 +167,15 @@ def tiddler_change_hook(store, tiddler):
     title = tiddler.title
     any_key = ANY_NAMESPACE
     bag_key = _container_namespace_key('bags', bag_name, '')
-    tiddler_key = _container_namespace_key('bags', bag_name, title)
-    logging.debug('%s tiddler change resetting namespace keys, %s, %s, %s', __name__, any_key, bag_key, tiddler_key)
+    #tiddler_key = _container_namespace_key('bags', bag_name, title)
+    #logging.debug('%s tiddler change resetting namespace keys, %s, %s, %s', __name__, any_key, bag_key, tiddler_key)
+    logging.debug('%s tiddler change resetting namespace keys, %s, %s', __name__, any_key, bag_key)
     # This get_store is required to work around confusion with what
     # store is current.
     top_store = get_store(store.environ['tiddlyweb.config'])
     top_store.storage._mc.set(any_key.encode('utf8'), '%s' % uuid.uuid4())
     top_store.storage._mc.set(bag_key.encode('utf8'), '%s' % uuid.uuid4())
-    top_store.storage._mc.set(tiddler_key.encode('utf8'), '%s' % uuid.uuid4())
+    #top_store.storage._mc.set(tiddler_key.encode('utf8'), '%s' % uuid.uuid4())
 
 
 def bag_change_hook(store, bag):
