@@ -2,7 +2,7 @@ AUTHOR = 'Chris Dent'
 AUTHOR_EMAIL = 'cdent@peermore.com'
 NAME = 'tiddlywebplugins.etagcache'
 DESCRIPTION = 'Cache TiddlyWeb ETags so that a 304 can be sent without checking store'
-VERSION = '0.1'
+VERSION = '0.2'
 
 
 import os
