@@ -35,7 +35,7 @@ def setup_module(module):
     # make some stuff
     bag = Bag('place')
     store.put(bag)
-    for i in range(1, 100):
+    for i in range(1, 10):
         tiddler = Tiddler('tiddler%s' % i, 'place')
         tiddler.text = 'hi%s'
         store.put(tiddler)
@@ -52,7 +52,7 @@ def make_time(port):
             'http://our_test_domain:%s/bags/place/tiddlers/tiddler5' % port)
     etag = response['etag']
     start = time.time()
-    for i in range(1, 2000):
+    for i in range(1, 200):
         response, content = http.request(
                 'http://our_test_domain:%s/bags/place/tiddlers/tiddler5' % port,
                 headers={'If-None-Match': etag})
@@ -65,7 +65,7 @@ def make_time(port):
             'http://our_test_domain:%s/bags/place/tiddlers' % port)
     etag = response['etag']
     start = time.time()
-    for i in range(1, 500):
+    for i in range(1, 50):
         response, content = http.request(
                 'http://our_test_domain:%s/bags/place/tiddlers' % port,
                 headers={'If-None-Match': etag})
