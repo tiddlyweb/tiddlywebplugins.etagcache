@@ -1,13 +1,31 @@
-This is a plugin for TiddlyWeb that creats a cache of ETags.
+This is a plugin for TiddlyWeb that creates a cache of ETags.
 
-By default it uses the memcached handling provided by
-tiddlywebplugins.caching.
+It uses the memcached handling provided by tiddlywebplugins.caching.
 
 Cache invalidation is handled via store hooks and this trick:
 http://code.google.com/p/memcached/wiki/FAQ#Deleting_by_Namespace
 
 Note the test files are not good tests, there were used to structure
 development but do not adequately assert anything.
+
+The plugins keeps a cache of ETags so we don't need to access the store
+to do validation.
+          
+This operates as a two tiered piece of middleware.
+
+On the request side it checks if the request is a GET and if it includes
+an If-None-Match header. If it does it looks up the current URI in the
+cache and compares the value with what's in the If-Match header. If they
+are the same we can raise a 304 right now.
+
+On the response side, if the current request is a GET and the outgoing
+response has an ETag, put the current URI and ETag into the cache.
+
+Store HOOKs are used to invalidate the cache through the management of
+namespaces.
+
+Installation is simply adding the plugin name to system_plugins and
+twanager_plugins in tiddlywebconfig.py
 
 Licensed as TiddlyWeb itself.
 Copyright 2011, Chris Dent <cdent@peermore.com>
