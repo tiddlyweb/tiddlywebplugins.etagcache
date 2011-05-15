@@ -135,6 +135,7 @@ class EtagCache(object):
         username = environ['tiddlyweb.usersign']['name']
         namespace = self._get_namespace(environ, uri)
         host = environ.get('HTTP_HOST', '')
+        uri = uri.decode('UTF-8', 'replace')
         key = '%s:%s:%s:%s:%s' % (namespace, mime_type, username, host, uri)
         return sha(key.encode('UTF-8')).hexdigest()
 
