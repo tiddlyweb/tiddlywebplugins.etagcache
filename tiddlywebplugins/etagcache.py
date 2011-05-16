@@ -159,20 +159,20 @@ class EtagCache(object):
             key = container_namespace_key(container, bag_name)
         elif '/recipes/' in uri:
             if '/tiddlers' in uri:
-                key = ANY_NAMESPACE
+                key = container_namespace_key(ANY_NAMESPACE)
             else:
                 container = uri_parts[1]
                 recipe_name = uri_parts[2]
                 key = container_namespace_key(container, recipe_name)
         # bags or recipes
         elif '/bags' in uri:
-            key = BAGS_NAMESPACE
+            key = container_namespace_key(BAGS_NAMESPACE)
         elif '/recipes' in uri:
-            key = RECIPES_NAMESPACE
+            key = container_namespace_key(RECIPES_NAMESPACE)
         # anything that didn't already match, like friendly uris or
         # search
         else:
-            key = ANY_NAMESPACE
+            key = container_namespace_key(ANY_NAMESPACE)
 
         namespace = self._mc.get(key)
         if not namespace:
