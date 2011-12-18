@@ -46,7 +46,7 @@ class EtagCache(object):
     def __call__(self, environ, start_response):
         logging.debug('%s entering', __name__)
         try:
-            _mc = environ['tiddlyweb.store'].storage._mc
+            _mc = environ['tiddlyweb.store'].storage.mc
         except AttributeError:
             _mc = None
         if _mc:
