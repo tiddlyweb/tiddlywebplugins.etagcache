@@ -231,6 +231,8 @@ def test_simple_get():
     recipe.desc = 'oh how now'
     store.put(recipe)
 
+    # changing desc changes etag
+
     response, content = http.request(
             'http://our_test_domain:8001/recipes/plaice',
             headers={'If-None-Match': etag})
