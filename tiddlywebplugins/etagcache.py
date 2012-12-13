@@ -25,10 +25,11 @@ import logging
 import uuid  # for namespacing
 import urllib
 
+from httpexceptor import HTTP304, HTTP415
+
 from tiddlyweb.util import sha
 from tiddlyweb.web.util import get_serialize_type
 from tiddlyweb.web.negotiate import Negotiate
-from tiddlyweb.web.http import HTTP304, HTTP415
 from tiddlywebplugins.caching import (container_namespace_key,
         ANY_NAMESPACE, BAGS_NAMESPACE, RECIPES_NAMESPACE)
 

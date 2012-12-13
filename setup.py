@@ -2,7 +2,7 @@ AUTHOR = 'Chris Dent'
 AUTHOR_EMAIL = 'cdent@peermore.com'
 NAME = 'tiddlywebplugins.etagcache'
 DESCRIPTION = 'Cache TiddlyWeb ETags so that a 304 can be sent without checking store'
-VERSION = '0.4'
+VERSION = '0.5'
 
 
 import os
@@ -23,7 +23,8 @@ setup(
     platforms = 'Posix; MacOS X; Windows',
     packages = find_packages(exclude=['test']),
     install_requires = ['setuptools',
-        'tiddlyweb>=1.2.16',
+        'tiddlyweb>=1.3.0',
+        'httpexceptor',
         'tiddlywebplugins.caching>=0.9.4'],
     zip_safe = False
     )

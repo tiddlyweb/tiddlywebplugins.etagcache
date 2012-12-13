@@ -235,8 +235,7 @@ def test_simple_get():
             'http://our_test_domain:8001/recipes/plaice',
             headers={'If-None-Match': etag})
     assert response['status'] == '200' # miss
-    assert response['etag'] == etag
-
+    assert response['etag'] != etag # etag is different because desc changeD
 
     response, content = http.request(
             'http://our_test_domain:8001/recipes')
