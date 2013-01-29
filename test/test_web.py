@@ -260,7 +260,7 @@ def test_simple_get():
     etag = response['etag']
 
 
-def test_bag_encoding():
+def test_bad_encoding():
     response, content = http.request(
             'http://our_test_domain:8001/search?q=tag:\"\xe8\xb3\x87\xe8\xa8\x8a\xe6\x89\x8b\xe8\xa8\x98\"')
     assert response['status'] == '200', content

@@ -34,6 +34,9 @@ from tiddlywebplugins.caching import (container_namespace_key,
         ANY_NAMESPACE, BAGS_NAMESPACE, RECIPES_NAMESPACE)
 
 
+LOGGER = logging.getLogger(__name__)
+
+
 class EtagCache(object):
     """
     Middleware that manages a cache of uri:etag pairs. The
@@ -45,14 +48,14 @@ class EtagCache(object):
         self.application = application
 
     def __call__(self, environ, start_response):
-        logging.debug('%s entering', __name__)
+        LOGGER.debug('%s entering', __name__)
         try:
             _mc = environ['tiddlyweb.store'].storage.mc
         except AttributeError:
             _mc = None
         if _mc:
             self._mc = _mc
-            logging.debug('%s checking cache', __name__)
+            LOGGER.debug('%s checking cache', __name__)
             self._check_cache(environ, start_response)
 
             def replacement_start_response(status, headers, exc_info=None):
@@ -65,7 +68,7 @@ class EtagCache(object):
 
             output = self.application(environ, replacement_start_response)
 
-            logging.debug('%s checking response', __name__)
+            LOGGER.debug('%s checking response', __name__)
             self._check_response(environ)
 
             return output
@@ -81,22 +84,22 @@ class EtagCache(object):
         """
         if environ['REQUEST_METHOD'] == 'GET':
             uri = _get_uri(environ)
-            logging.debug('%s with %s %s', __name__, uri,
+            LOGGER.debug('%s with %s %s', __name__, uri,
                     environ['REQUEST_METHOD'])
             if _cacheable(environ, uri):
                 match = environ.get('HTTP_IF_NONE_MATCH', None)
                 if match:
-                    logging.debug('%s has match %s', __name__, match)
+                    LOGGER.debug('%s has match %s', __name__, match)
                     cached_etag = self._mc.get(self._make_key(environ, uri))
-                    logging.debug('%s comparing cached %s to %s', __name__,
+                    LOGGER.debug('%s comparing cached %s to %s', __name__,
                             cached_etag, match)
                     if cached_etag and cached_etag == match:
-                        logging.debug('%s cache hit for %s', __name__, uri)
+                        LOGGER.debug('%s cache hit for %s', __name__, uri)
                         raise HTTP304(match)
                     else:
-                        logging.debug('%s cache miss for %s', __name__, uri)
+                        LOGGER.debug('%s cache miss for %s', __name__, uri)
                 else:
-                    logging.debug('%s no if none match for %s', __name__, uri)
+                    LOGGER.debug('%s no if none match for %s', __name__, uri)
 
     def _check_response(self, environ):
         """
@@ -115,7 +118,7 @@ class EtagCache(object):
         Add the uri and etag to the cache.
         """
         uri = _get_uri(environ)
-        logging.debug('%s adding to cache %s:%s', __name__, uri, value)
+        LOGGER.debug('%s adding to cache %s:%s', __name__, uri, value)
         self._mc.set(self._make_key(environ, uri), value)
 
     def _make_key(self, environ, uri):
@@ -132,7 +135,7 @@ class EtagCache(object):
             default_serializer = config['default_serializer']
             serializers = config['serializers']
             mime_type = serializers[default_serializer][1]
-        logging.debug('%s mime_type %s for %s', __name__, mime_type, uri)
+        LOGGER.debug('%s mime_type %s for %s', __name__, mime_type, uri)
         username = environ['tiddlyweb.usersign']['name']
         namespace = self._get_namespace(environ, uri)
         host = environ.get('HTTP_HOST', '')
@@ -178,11 +181,11 @@ class EtagCache(object):
         namespace = self._mc.get(key)
         if not namespace:
             namespace = '%s' % uuid.uuid4()
-            logging.debug('%s no namespace for %s, setting to %s', __name__,
+            LOGGER.debug('%s no namespace for %s, setting to %s', __name__,
                     key, namespace)
             self._mc.set(key.encode('utf8'), namespace)
 
-        logging.debug('%s current namespace %s:%s', __name__,
+        LOGGER.debug('%s current namespace %s:%s', __name__,
                 key, namespace)
 
         return namespace
