@@ -14,6 +14,7 @@ from tiddlywebplugins.utils import get_store
 import random
 import shutil
 import string
+import threading
 
 
 RELEVANT_HEADERS = ['cache-control', 'etag', 'vary', 'last-modified']
@@ -53,6 +54,50 @@ def test_single_tiddler():
             tiddler.bag, tiddler.title)
 
     _get_entity(uri)
+
+
+class RequestThread(threading.Thread):
+    """
+    Simple thread to test data concurrency.
+    """
+    def __init__(self, uri, pause=30):
+        threading.Thread.__init__(self)
+        self.uri = uri
+        self.pause = pause
+        self.response = None
+        self.content = None
+
+    def run(self):
+        response, content = http.request(self.uri)
+        self.response = response
+        self.content = content
+
+
+def test_thread_safety():
+    """
+    Non asserting test to exercise threads, demonstrating
+    confusion over who has written headers and status information.
+    This experiment led to the creation of the Holder object,
+    so leaving in for reference.
+    """
+    bag = Bag(_random_name())
+    store.put(bag)
+
+    threads = []
+    for i in range(10):
+        tiddler = Tiddler(_random_name(), bag.name)
+        tiddler.text = _random_name(10)
+        store.put(tiddler)
+        uri = 'http://our_test_domain:8001/bags/%s/tiddlers/%s' % (
+            tiddler.bag, tiddler.title)
+        thread = RequestThread(uri)
+        threads.append(thread)
+
+    for thread in threads:
+        thread.start()
+
+    for thread in threads:
+        thread.join()
 
 
 def _get_entity(uri):

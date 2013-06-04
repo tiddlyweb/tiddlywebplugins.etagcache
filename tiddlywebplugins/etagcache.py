@@ -11,11 +11,13 @@ with what's in the If-Match header. If they are the same
 we can raise a 304 right now.
 
 On the response side, if the current request is a GET
-and the outgoing response has an ETag, put the current
-URI and ETag into the cache.
+and we put the headers in the cache, with the URI as key.
+On future requests if the incoming headers have an ETag
+we look in the cache.
 
 Store HOOKs are used to invalidate the cache through the
-management of namespaces.
+management of namespaces. Those hooks are activated in
+tiddlywebplugins.cachingstore, not this module.
 
 Installation is simply adding the plugin name to system_plugins
 and twanager_plugins in tiddlywebconfig.py
@@ -35,6 +37,42 @@ from tiddlywebplugins.caching import (container_namespace_key,
 
 
 LOGGER = logging.getLogger(__name__)
+HEADERS_304 = ['etag', 'vary', 'cache-control', 'last-modified',
+        'content-location', 'expires']
+
+
+class Holder(object):
+    """
+    A simple object for encapsulating response headers through
+    a single middleware processing stage and then checking those
+    headers against cache.
+    """
+
+    def __init__(self, memclient, environ, status=None, headers=None):
+        self.memclient = memclient
+        self.environ = environ
+        self.status = status
+        self.headers = headers
+
+    def check_response(self):
+        """
+        If the current response is in response to a GET then attempt
+        to cache it.
+
+        We worry about whether there was an etag on the _next_ request.
+        """
+        if (self.environ['REQUEST_METHOD'] == 'GET'
+                and self.status.startswith('200')):
+            uri = _get_uri(self.environ)
+            self._cache(uri)
+
+    def _cache(self, uri):
+        """
+        Add the uri and etag to the cache.
+        """
+        LOGGER.debug('adding to cache %s:%s', uri, self.headers)
+        key = _make_key(self.memclient, self.environ, uri)
+        self.memclient.set(key, self.headers)
 
 
 class EtagCache(object):
@@ -48,155 +86,138 @@ class EtagCache(object):
         self.application = application
 
     def __call__(self, environ, start_response):
-        LOGGER.debug('%s entering', __name__)
+        LOGGER.debug('entering')
         try:
-            _mc = environ['tiddlyweb.store'].storage.mc
+            _memclient = environ['tiddlyweb.store'].storage.mc
         except AttributeError:
-            _mc = None
-        if _mc:
-            self._mc = _mc
-            LOGGER.debug('%s checking cache', __name__)
-            self._check_cache(environ, start_response)
+            _memclient = None
+
+        if _memclient:
+            LOGGER.debug('checking cache')
+            _check_cache(_memclient, environ)
+
+            # Create a holder for response details for this current
+            # request.
+            holder = Holder(_memclient, environ)
 
             def replacement_start_response(status, headers, exc_info=None):
                 """
                 Record status and headers for later manipulation.
                 """
-                self.status = status
-                self.headers = headers
+                holder.status = status
+                holder.headers = headers
                 return start_response(status, headers, exc_info)
 
             output = self.application(environ, replacement_start_response)
 
-            LOGGER.debug('%s checking response', __name__)
-            self._check_response(environ)
+            LOGGER.debug('checking response')
+            holder.check_response()
 
             return output
         else:
             return self.application(environ, start_response)
 
-    def _check_cache(self, environ, start_response):
-        """
-        Look in the cache for a match on the current request. That
-        request much be a GET and include an If-None-Match header.
 
-        If there is a match, send an immediate 304.
-        """
-        if environ['REQUEST_METHOD'] == 'GET':
-            uri = _get_uri(environ)
-            LOGGER.debug('%s with %s %s', __name__, uri,
-                    environ['REQUEST_METHOD'])
-            if _cacheable(environ, uri):
-                match = environ.get('HTTP_IF_NONE_MATCH', None)
-                if match:
-                    LOGGER.debug('%s has match %s', __name__, match)
-                    cached_etag = self._mc.get(self._make_key(environ, uri))
-                    LOGGER.debug('%s comparing cached %s to %s', __name__,
-                            cached_etag, match)
-                    if cached_etag and cached_etag == match:
-                        LOGGER.debug('%s cache hit for %s', __name__, uri)
-                        raise HTTP304(match)
-                    else:
-                        LOGGER.debug('%s cache miss for %s', __name__, uri)
-                else:
-                    LOGGER.debug('%s no if none match for %s', __name__, uri)
+def _check_cache(memclient, environ):
+    """
+    Look in the cache for a match on the current request. That
+    request much be a GET and include an If-None-Match header.
 
-    def _check_response(self, environ):
-        """
-        If the current response is in response to a GET then attempt
-        to cache it.
-        """
-        if environ['REQUEST_METHOD'] == 'GET':
-            uri = _get_uri(environ)
-            if _cacheable(environ, uri):
-                for name, value in self.headers:
-                    if name.lower() == 'etag':
-                        self._cache(environ, value)
-
-    def _cache(self, environ, value):
-        """
-        Add the uri and etag to the cache.
-        """
+    If there is a match, send an immediate 304.
+    """
+    if environ['REQUEST_METHOD'] == 'GET':
         uri = _get_uri(environ)
-        LOGGER.debug('%s adding to cache %s:%s', __name__, uri, value)
-        self._mc.set(self._make_key(environ, uri), value)
-
-    def _make_key(self, environ, uri):
-        """
-        Build a key for the current request. The key is a combination
-        of the current namespace, the current content type, the current
-        user, the host, and the uri.
-        """
-        try:
-            mime_type = get_serialize_type(environ)[1]
-            mime_type = mime_type.split(';', 1)[0].strip()
-        except (TypeError, AttributeError, HTTP415):
-            config = environ['tiddlyweb.config']
-            default_serializer = config['default_serializer']
-            serializers = config['serializers']
-            mime_type = serializers[default_serializer][1]
-        LOGGER.debug('%s mime_type %s for %s', __name__, mime_type, uri)
-        username = environ['tiddlyweb.usersign']['name']
-        namespace = self._get_namespace(environ, uri)
-        host = environ.get('HTTP_HOST', '')
-        uri = uri.decode('UTF-8', 'replace')
-        key = '%s:%s:%s:%s:%s' % (namespace, mime_type, username, host, uri)
-        return sha(key.encode('UTF-8')).hexdigest()
-
-    def _get_namespace(self, environ, uri):
-        """
-        Calculate the namespace in which we will look for a match.
-
-        The namespace is built from the current URI.
-        """
-        prefix = environ.get('tiddlyweb.config', {}).get('server_prefix', '')
-
-        index = 0
-        if prefix:
-            index = 1
-
-        uri_parts = uri.split('/')[index:]
-
-        if '/bags/' in uri:
-            container = uri_parts[1]
-            bag_name = uri_parts[2]
-            key = container_namespace_key(container, bag_name)
-        elif '/recipes/' in uri:
-            if '/tiddlers' in uri:
-                key = container_namespace_key(ANY_NAMESPACE)
+        LOGGER.debug('with %s %s', uri, environ['REQUEST_METHOD'])
+        match = environ.get('HTTP_IF_NONE_MATCH', None)
+        if match:
+            LOGGER.debug('has match %s', match)
+            key = _make_key(memclient, environ, uri)
+            cached_headers = memclient.get(key)
+            if cached_headers:
+                _testmatch(uri, cached_headers, match)
             else:
-                container = uri_parts[1]
-                recipe_name = uri_parts[2]
-                key = container_namespace_key(container, recipe_name)
-        # bags or recipes
-        elif '/bags' in uri:
-            key = container_namespace_key(BAGS_NAMESPACE)
-        elif '/recipes' in uri:
-            key = container_namespace_key(RECIPES_NAMESPACE)
-        # anything that didn't already match, like friendly uris or
-        # search
+                LOGGER.debug('no cached headers for %s', uri)
         else:
+            LOGGER.debug('no if none match for %s', uri)
+
+
+def _testmatch(uri, cached_headers, match):
+    """
+    If the cached_headers include an Etag, compare that with the incoming
+    if-none-match value in match.
+
+    If they are the same, raise a 304 with the relevant stored headers.
+    Otherwise we pass through.
+    """
+    headers_dict = {}
+    for name, value in cached_headers:
+        name = name.lower()
+        # Special case handling of no-transform,
+        # which is added by middleware later.
+        if name == 'cache-control' and value == 'no-transform':
+            continue
+        if name in HEADERS_304:
+            headers_dict[name] = value
+
+    cached_etag = headers_dict.get('etag')
+    LOGGER.debug('comparing cached %s to %s',
+            cached_etag, match)
+    if cached_etag and cached_etag == match:
+        LOGGER.debug('cache hit for %s', uri)
+        raise HTTP304(etag=headers_dict['etag'],
+                vary=headers_dict.get('vary'),
+                cache_control=headers_dict.get('cache-control'),
+                last_modified=headers_dict.get('last-modified'),
+                content_location=headers_dict.get('content-location'),
+                expires=headers_dict.get('expires'))
+    else:
+        LOGGER.debug('cache miss for %s', uri)
+
+
+def _get_namespace(memclient, environ, uri):
+    """
+    Calculate the namespace in which we will look for a match.
+
+    The namespace is built from the current URI.
+    """
+    prefix = environ.get('tiddlyweb.config', {}).get('server_prefix', '')
+
+    index = 0
+    if prefix:
+        index = 1
+
+    uri_parts = uri.split('/')[index:]
+
+    if '/bags/' in uri:
+        container = uri_parts[1]
+        bag_name = uri_parts[2]
+        key = container_namespace_key(container, bag_name)
+    elif '/recipes/' in uri:
+        if '/tiddlers' in uri:
             key = container_namespace_key(ANY_NAMESPACE)
+        else:
+            container = uri_parts[1]
+            recipe_name = uri_parts[2]
+            key = container_namespace_key(container, recipe_name)
+    # bags or recipes
+    elif '/bags' in uri:
+        key = container_namespace_key(BAGS_NAMESPACE)
+    elif '/recipes' in uri:
+        key = container_namespace_key(RECIPES_NAMESPACE)
+    # anything that didn't already match, like friendly uris or
+    # search
+    else:
+        key = container_namespace_key(ANY_NAMESPACE)
 
-        namespace = self._mc.get(key)
-        if not namespace:
-            namespace = '%s' % uuid.uuid4()
-            LOGGER.debug('%s no namespace for %s, setting to %s', __name__,
-                    key, namespace)
-            self._mc.set(key.encode('utf8'), namespace)
+    namespace = memclient.get(key)
+    if not namespace:
+        namespace = '%s' % uuid.uuid4()
+        LOGGER.debug('no namespace for %s, setting to %s', key, namespace)
+        memclient.set(key.encode('utf8'), namespace)
 
-        LOGGER.debug('%s current namespace %s:%s', __name__,
-                key, namespace)
+    LOGGER.debug('current namespace %s:%s', key, namespace)
 
-        return namespace
-
-
-def _cacheable(environ, uri):
-    """
-    Is the current uri cacheable?
-    For the time being attempt to cache anything.
-    """
-    return True
+    return namespace
 
 
 def _get_uri(environ):
@@ -208,6 +229,29 @@ def _get_uri(environ):
     if environ.get('QUERY_STRING'):
         uri += '?' + environ['QUERY_STRING']
     return uri
+
+
+def _make_key(memclient, environ, uri):
+    """
+    Build a key for the current request. The key is a combination
+    of the current namespace, the current content type, the current
+    user, the host, and the uri.
+    """
+    try:
+        mime_type = get_serialize_type(environ)[1]
+        mime_type = mime_type.split(';', 1)[0].strip()
+    except (TypeError, AttributeError, HTTP415):
+        config = environ['tiddlyweb.config']
+        default_serializer = config['default_serializer']
+        serializers = config['serializers']
+        mime_type = serializers[default_serializer][1]
+    LOGGER.debug('mime_type %s for %s', mime_type, uri)
+    username = environ['tiddlyweb.usersign']['name']
+    namespace = _get_namespace(memclient, environ, uri)
+    host = environ.get('HTTP_HOST', '')
+    uri = uri.decode('UTF-8', 'replace')
+    key = '%s:%s:%s:%s:%s' % (namespace, mime_type, username, host, uri)
+    return sha(key.encode('UTF-8')).hexdigest()
 
 
 def init(config):
